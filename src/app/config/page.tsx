@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAdmin } from '@/components/ssh-provider';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,38 +13,40 @@ import { cn } from '@/lib/utils';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
 export default function ConfigPage() {
-  const { api, connected } = useAdmin();
+  const { api, connected, config: cachedConfig, configRaw: cachedRaw, configLoading, updateConfigLocal, reloadConfig } = useAdmin();
   const [config, setConfig] = useState<any>(null);
   const [raw, setRaw] = useState('');
   const [tab, setTab] = useState<'visual' | 'raw'>('visual');
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
-  const load = async () => {
-    try {
-      setLoading(true);
-      const data = await api.getConfig();
-      setConfig(data.config);
-      setRaw(data.raw || JSON.stringify(data.config, null, 2));
-    } catch (e: any) {
-      toast.error('Error al cargar configuración', { description: e.message });
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    if (dirty) return;
+    setConfig(cachedConfig ?? null);
+    setRaw(cachedRaw || (cachedConfig ? JSON.stringify(cachedConfig, null, 2) : ''));
+  }, [cachedConfig, cachedRaw, dirty]);
 
-  useEffect(() => { if (connected) load(); }, [connected]);
+  const loading = configLoading && !raw && !config;
 
   const saveConfig = async () => {
     try {
       setSaving(true);
       if (tab === 'raw') {
         await api.setConfigRaw(raw);
+        let parsed: any = null;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          parsed = null;
+        }
+        updateConfigLocal(parsed, raw);
       } else {
         await api.setConfig(config);
+        updateConfigLocal(config, JSON.stringify(config, null, 2));
       }
+      await reloadConfig();
+      setDirty(false);
       toast.success('Configuración guardada', { description: 'Gateway reiniciado exitosamente' });
-      load();
     } catch (e: any) {
       toast.error('Error al guardar configuración', { description: e.message });
     } finally {
@@ -68,7 +70,10 @@ export default function ConfigPage() {
     reader.onload = (ev) => {
       const content = ev.target?.result as string;
       setRaw(content);
-      try { setConfig(JSON.parse(content)); } catch {}
+      try {
+        setConfig(JSON.parse(content));
+      } catch {}
+      setDirty(true);
       setTab('raw');
       toast.success('Archivo cargado', { description: 'Revisa los cambios y guarda para aplicar' });
     };
@@ -149,7 +154,10 @@ export default function ConfigPage() {
         ) : tab === 'raw' ? (
           <Textarea 
             value={raw} 
-            onChange={e => setRaw(e.target.value)}
+            onChange={e => {
+              setRaw(e.target.value);
+              setDirty(true);
+            }}
             className="w-full h-full border-0 rounded-none focus-visible:ring-0 p-6 font-mono text-sm resize-none bg-background" 
             aria-label="Editor de configuración JSON"
             spellCheck={false}

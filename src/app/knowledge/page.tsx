@@ -1,55 +1,80 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAdmin } from '@/components/ssh-provider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Save, FileText, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getKnowledgeWorkspaceOptions } from '@/lib/config-selectors';
 
 const WORKSPACE_FILES = ['SOUL.md', 'AGENTS.md', 'TOOLS.md', 'HEARTBEAT.md', 'BOOTSTRAP.md', 'IDENTITY.md', 'USER.md', 'MEMORY.md', 'SHIELD.md'];
 
 export default function KnowledgePage() {
-  const { api, connected } = useAdmin();
+  const { api, connected, config } = useAdmin();
   const [files, setFiles] = useState<{ name: string; path: string }[]>([]);
   const [selectedFile, setSelectedFile] = useState('');
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [skills, setSkills] = useState<any[]>([]);
+  const [selectedWorkspace, setSelectedWorkspace] = useState('');
 
-  const loadFiles = async () => {
+  const workspaceOptions = useMemo(() => getKnowledgeWorkspaceOptions(config), [config]);
+
+  const loadFiles = useCallback(async (workspace: string) => {
     try {
-      const data = await api.listWorkspaceFiles();
+      const data = await api.listWorkspaceFiles(workspace);
       setFiles(data.files || WORKSPACE_FILES.map(f => ({ name: f, path: f })));
     } catch {
       setFiles(WORKSPACE_FILES.map(f => ({ name: f, path: f })));
     }
-  };
+  }, [api]);
 
-  const loadSkills = async () => {
+  const loadSkills = useCallback(async () => {
     try {
       const data = await api.listSkills();
       setSkills(data.skills || []);
     } catch {}
-  };
+  }, [api]);
+
+  useEffect(() => {
+    if (!connected) return;
+    if (!selectedWorkspace && workspaceOptions.length > 0) {
+      setSelectedWorkspace(workspaceOptions[0].path);
+      return;
+    }
+    const stillValid = workspaceOptions.some((opt) => opt.path === selectedWorkspace);
+    if (!stillValid && workspaceOptions.length > 0) {
+      setSelectedWorkspace(workspaceOptions[0].path);
+    }
+  }, [connected, selectedWorkspace, workspaceOptions]);
+
+  useEffect(() => {
+    if (connected && selectedWorkspace) {
+      setSelectedFile('');
+      setContent('');
+      void loadFiles(selectedWorkspace);
+    }
+  }, [connected, selectedWorkspace, loadFiles]);
 
   useEffect(() => {
     if (connected) {
-      loadFiles();
-      loadSkills();
+      void loadSkills();
     }
-  }, [connected]);
+  }, [connected, loadSkills]);
 
   const openFile = async (name: string) => {
+    if (!selectedWorkspace) return;
     try {
       setLoading(true);
       setSelectedFile(name);
-      const data = await api.readWorkspaceFile(name);
+      const data = await api.readWorkspaceFile(name, selectedWorkspace);
       setContent(data.content || '');
     } catch (e: any) {
       setContent('');
@@ -60,10 +85,10 @@ export default function KnowledgePage() {
   };
 
   const saveFile = async () => {
-    if (!selectedFile) return;
+    if (!selectedFile || !selectedWorkspace) return;
     try {
       setSaving(true);
-      await api.writeWorkspaceFile(selectedFile, content);
+      await api.writeWorkspaceFile(selectedFile, content, selectedWorkspace);
       toast.success(`${selectedFile} guardado`);
     } catch (e: any) {
       toast.error('Error al guardar archivo', { description: e.message });
@@ -86,6 +111,20 @@ export default function KnowledgePage() {
     <div className="p-8 max-w-7xl mx-auto space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Knowledge Base</h1>
+        <div className="w-full max-w-sm">
+          <Select value={selectedWorkspace} onValueChange={setSelectedWorkspace}>
+            <SelectTrigger aria-label="Seleccionar workspace">
+              <SelectValue placeholder="Seleccionar workspace" />
+            </SelectTrigger>
+            <SelectContent>
+              {workspaceOptions.map((workspace) => (
+                <SelectItem key={workspace.id} value={workspace.path}>
+                  {workspace.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">

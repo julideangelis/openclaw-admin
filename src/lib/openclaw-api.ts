@@ -100,20 +100,23 @@ export class OpenClawAPI {
   }
 
   // --- Workspace ---
-  async listWorkspaceFiles() {
-    return apiFetch<{ files: { name: string; path: string }[] }>('/workspace');
+  async listWorkspaceFiles(workspace?: string) {
+    const query = workspace ? `?workspace=${encodeURIComponent(workspace)}` : '';
+    return apiFetch<{ files: { name: string; path: string }[] }>(`/workspace${query}`);
   }
 
-  async readWorkspaceFile(file: string) {
+  async readWorkspaceFile(file: string, workspace?: string) {
+    const params = new URLSearchParams({ file });
+    if (workspace) params.set('workspace', workspace);
     return apiFetch<{ name: string; content: string; size: number; lastModified: number }>(
-      `/workspace?file=${encodeURIComponent(file)}`
+      `/workspace?${params.toString()}`
     );
   }
 
-  async writeWorkspaceFile(file: string, content: string) {
+  async writeWorkspaceFile(file: string, content: string, workspace?: string) {
     return apiFetch('/workspace', {
       method: 'POST',
-      body: JSON.stringify({ file, content }),
+      body: JSON.stringify({ file, content, workspace }),
     });
   }
 

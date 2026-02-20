@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useAdmin } from '@/components/ssh-provider';
 import { OPENCLAW_TOOLS } from '@/lib/types';
+import { getAvailableModels, getDefaultWorkspace, getPrimaryModel } from '@/lib/config-selectors';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -35,24 +36,33 @@ const emptyForm: AgentForm = {
 };
 
 export default function AgentsPage() {
-  const { api, connected } = useAdmin();
-  const [agents, setAgents] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { api, connected, config, configLoading, updateConfigLocal, reloadConfig } = useAdmin();
   const [editing, setEditing] = useState<AgentForm | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const load = async () => {
-    try {
-      setLoading(true);
-      const data = await api.listAgents();
-      setAgents(data.agents || []);
-    } catch (e: any) {
-      toast.error('Error al cargar agentes', { description: e.message });
-    } finally {
-      setLoading(false);
-    }
+  const agents = Array.isArray(config?.agents?.list) ? config.agents.list : [];
+  const defaultModel = getPrimaryModel(config) || emptyForm.model;
+  const defaultWorkspace = getDefaultWorkspace(config);
+  const availableModels = getAvailableModels(config);
+  const loading = configLoading && !config;
+
+  const makeEmptyForm = (): AgentForm => ({
+    ...emptyForm,
+    model: defaultModel,
+    workspace: defaultWorkspace,
+  });
+
+  const toForm = (agent: any): AgentForm => {
+    return {
+      ...makeEmptyForm(),
+      ...agent,
+      model: agent?.model || defaultModel,
+      workspace: agent?.workspace || defaultWorkspace,
+      tools: { allow: [], deny: [], ...agent?.tools },
+      subagents: { allowAgents: [], maxConcurrent: 4, ...agent?.subagents },
+      sandbox: { mode: 'off', scope: 'session', ...agent?.sandbox },
+    };
   };
-
-  useEffect(() => { if (connected) load(); }, [connected]);
 
   const save = async () => {
     if (!editing) return;
@@ -61,23 +71,57 @@ export default function AgentsPage() {
       return;
     }
     try {
+      setSaving(true);
       await api.updateAgent(editing);
+      if (config) {
+        const nextAgents = Array.isArray(config?.agents?.list) ? [...config.agents.list] : [];
+        const idx = nextAgents.findIndex((a: any) => a.id === editing.id);
+        if (idx >= 0) {
+          nextAgents[idx] = editing;
+        } else {
+          nextAgents.push(editing);
+        }
+        updateConfigLocal({
+          ...config,
+          agents: {
+            ...(config.agents || {}),
+            list: nextAgents,
+          },
+        });
+      }
       setEditing(null);
       toast.success('Agente guardado exitosamente');
-      load();
+      await reloadConfig();
     } catch (e: any) {
       toast.error('Error al guardar agente', { description: e.message });
+    } finally {
+      setSaving(false);
     }
   };
 
   const remove = async (id: string) => {
     if (!confirm(`¿Eliminar agente "${id}"?`)) return;
     try {
+      setSaving(true);
       await api.deleteAgent(id);
+      if (config) {
+        const nextAgents = Array.isArray(config?.agents?.list)
+          ? config.agents.list.filter((a: any) => a.id !== id)
+          : [];
+        updateConfigLocal({
+          ...config,
+          agents: {
+            ...(config.agents || {}),
+            list: nextAgents,
+          },
+        });
+      }
       toast.success('Agente eliminado');
-      load();
+      await reloadConfig();
     } catch (e: any) {
       toast.error('Error al eliminar agente', { description: e.message });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -101,7 +145,7 @@ export default function AgentsPage() {
     <div className="p-8 max-w-7xl mx-auto space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Agentes</h1>
-        <Button onClick={() => setEditing({ ...emptyForm })} className="gap-2">
+        <Button onClick={() => setEditing(makeEmptyForm())} className="gap-2">
           <Plus className="h-4 w-4" />
           <span className="hidden sm:inline">Nuevo Agente</span>
         </Button>
@@ -120,7 +164,7 @@ export default function AgentsPage() {
           <p className="text-muted-foreground mt-2 max-w-sm mb-6">
             Aún no has configurado ningún agente. Comienza creando tu primer agente de IA.
           </p>
-          <Button onClick={() => setEditing({ ...emptyForm })} variant="outline">
+          <Button onClick={() => setEditing(makeEmptyForm())} variant="outline">
             <Plus className="h-4 w-4 mr-2" />
             Crear Agente
           </Button>
@@ -143,7 +187,7 @@ export default function AgentsPage() {
               <CardContent className="flex-1 space-y-4">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Terminal className="h-4 w-4" />
-                  <span className="truncate">{agent.model || 'default'}</span>
+                  <span className="truncate">{agent.model || defaultModel || 'default'}</span>
                 </div>
               </CardContent>
               <CardFooter className="pt-4 border-t border-border flex justify-between">
@@ -151,7 +195,7 @@ export default function AgentsPage() {
                   variant="outline" 
                   size="sm"
                   className="gap-2"
-                  onClick={() => setEditing({ ...emptyForm, ...agent, tools: { allow: [], deny: [], ...agent.tools }, subagents: { allowAgents: [], maxConcurrent: 4, ...agent.subagents }, sandbox: { mode: 'off', scope: 'session', ...agent.sandbox } })}
+                  onClick={() => setEditing(toForm(agent))}
                 >
                   <Edit2 className="h-4 w-4" />
                   Editar
@@ -192,11 +236,29 @@ export default function AgentsPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="model">Modelo</Label>
-                    <Input id="model" value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })} />
+                    <Input
+                      id="model"
+                      list="available-models"
+                      value={editing.model}
+                      onChange={e => setEditing({ ...editing, model: e.target.value })}
+                      placeholder={defaultModel}
+                    />
+                    {availableModels.length > 0 && (
+                      <datalist id="available-models">
+                        {availableModels.map((modelId) => (
+                          <option key={modelId} value={modelId} />
+                        ))}
+                      </datalist>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="workspace">Workspace</Label>
-                    <Input id="workspace" value={editing.workspace} onChange={e => setEditing({ ...editing, workspace: e.target.value })} placeholder="Ej: /var/www" />
+                    <Input
+                      id="workspace"
+                      value={editing.workspace}
+                      onChange={e => setEditing({ ...editing, workspace: e.target.value })}
+                      placeholder={defaultWorkspace || 'Ej: /var/www'}
+                    />
                   </div>
                 </div>
 
@@ -259,7 +321,7 @@ export default function AgentsPage() {
 
           <DialogFooter className="px-6 py-4 border-t bg-muted/40">
             <Button variant="outline" onClick={() => setEditing(null)}>Cancelar</Button>
-            <Button onClick={save}>Guardar</Button>
+            <Button onClick={save} disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -9,6 +9,14 @@ interface AdminContextType {
   status: any;
   error: string | null;
   refreshStatus: () => Promise<void>;
+  config: any;
+  configRaw: string;
+  configLoading: boolean;
+  configError: string | null;
+  configLastLoadedAt: number | null;
+  loadConfigOnce: () => Promise<void>;
+  reloadConfig: () => Promise<void>;
+  updateConfigLocal: (nextConfig: any, nextRaw?: string) => void;
 }
 
 const AdminContext = createContext<AdminContextType | null>(null);
@@ -23,8 +31,14 @@ export function SSHProvider({ children }: { children: React.ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [config, setConfig] = useState<any>(null);
+  const [configRaw, setConfigRaw] = useState('');
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [configLastLoadedAt, setConfigLastLoadedAt] = useState<number | null>(null);
   const apiRef = useRef(new OpenClawAPI());
   const pollRef = useRef<NodeJS.Timeout | null>(null);
+  const configLoadedRef = useRef(false);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -38,6 +52,45 @@ export function SSHProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const loadConfig = useCallback(
+    async (force = false) => {
+      if (!connected) return;
+      if (!force && configLoadedRef.current) return;
+      if (configLoading) return;
+
+      try {
+        setConfigLoading(true);
+        const data = await apiRef.current.getConfig();
+        setConfig(data.config ?? null);
+        setConfigRaw(data.raw || (data.config ? JSON.stringify(data.config, null, 2) : ''));
+        setConfigError(null);
+        setConfigLastLoadedAt(Date.now());
+        configLoadedRef.current = true;
+      } catch (err: any) {
+        setConfigError(err.message || 'Error al cargar configuración');
+      } finally {
+        setConfigLoading(false);
+      }
+    },
+    [connected, configLoading]
+  );
+
+  const loadConfigOnce = useCallback(async () => {
+    await loadConfig(false);
+  }, [loadConfig]);
+
+  const reloadConfig = useCallback(async () => {
+    await loadConfig(true);
+  }, [loadConfig]);
+
+  const updateConfigLocal = useCallback((nextConfig: any, nextRaw?: string) => {
+    setConfig(nextConfig ?? null);
+    setConfigRaw(typeof nextRaw === 'string' ? nextRaw : nextConfig ? JSON.stringify(nextConfig, null, 2) : '');
+    setConfigError(null);
+    setConfigLastLoadedAt(Date.now());
+    configLoadedRef.current = true;
+  }, []);
+
   // Check connection on mount and poll
   useEffect(() => {
     refreshStatus();
@@ -47,6 +100,20 @@ export function SSHProvider({ children }: { children: React.ReactNode }) {
     };
   }, [refreshStatus]);
 
+  useEffect(() => {
+    if (connected) {
+      void loadConfigOnce();
+      return;
+    }
+
+    configLoadedRef.current = false;
+    setConfig(null);
+    setConfigRaw('');
+    setConfigError(null);
+    setConfigLoading(false);
+    setConfigLastLoadedAt(null);
+  }, [connected, loadConfigOnce]);
+
   return (
     <AdminContext.Provider
       value={{
@@ -55,6 +122,14 @@ export function SSHProvider({ children }: { children: React.ReactNode }) {
         status,
         error,
         refreshStatus,
+        config,
+        configRaw,
+        configLoading,
+        configError,
+        configLastLoadedAt,
+        loadConfigOnce,
+        reloadConfig,
+        updateConfigLocal,
       }}
     >
       {children}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useAdmin } from '@/components/ssh-provider';
 import { OPENCLAW_TOOLS } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -11,27 +11,15 @@ import { Shield, Check, X, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function PermissionsPage() {
-  const { api, connected } = useAdmin();
-  const [agents, setAgents] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { api, connected, config, configLoading, updateConfigLocal, reloadConfig } = useAdmin();
   const [saving, setSaving] = useState(false);
-
-  const load = async () => {
-    try {
-      setLoading(true);
-      const data = await api.listAgents();
-      setAgents(data.agents || []);
-    } catch (e: any) {
-      toast.error('Error al cargar permisos', { description: e.message });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { if (connected) load(); }, [connected]);
+  const agents = Array.isArray(config?.agents?.list) ? config.agents.list : [];
+  const loading = configLoading && !config;
 
   const toggleTool = async (agentIdx: number, tool: string, list: 'allow' | 'deny') => {
-    const agent = { ...agents[agentIdx] };
+    if (!config) return;
+    const nextAgents = Array.isArray(config?.agents?.list) ? [...config.agents.list] : [];
+    const agent = { ...nextAgents[agentIdx] };
     if (!agent.tools) agent.tools = { allow: [], deny: [] };
     if (!agent.tools[list]) agent.tools[list] = [];
 
@@ -44,17 +32,22 @@ export default function PermissionsPage() {
       agent.tools[oppositeList] = agent.tools[oppositeList].filter((t: string) => t !== tool);
     }
 
-    const updated = [...agents];
-    updated[agentIdx] = agent;
-    setAgents(updated);
+    nextAgents[agentIdx] = agent;
+    updateConfigLocal({
+      ...config,
+      agents: {
+        ...(config.agents || {}),
+        list: nextAgents,
+      },
+    });
 
     try {
       setSaving(true);
       await api.updateAgent(agent);
+      await reloadConfig();
     } catch (e: any) {
       toast.error(`Error al actualizar permisos de ${agent.name || agent.id}`, { description: e.message });
-      // Revertir
-      load();
+      await reloadConfig();
     } finally {
       setSaving(false);
     }

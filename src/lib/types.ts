@@ -149,7 +149,11 @@ export interface GatewayConfig {
 
 export interface AgentsConfig {
   defaults?: {
-    model?: string;
+    model?: string | {
+      primary?: string;
+      [key: string]: any;
+    };
+    models?: Record<string, any>;
     workspace?: string;
     sandbox?: SandboxConfig;
   };
