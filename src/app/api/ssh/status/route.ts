@@ -10,6 +10,9 @@ export async function GET() {
     // Get gateway status
     const statusResult = await sshExec('openclaw gateway status --json 2>/dev/null || openclaw gateway status 2>&1');
     
+    // Get openclaw version
+    const versionResult = await sshExec('openclaw --version 2>/dev/null || echo "N/A"');
+    
     // Get channels status  
     const channelsResult = await sshExec('openclaw channels status --json 2>/dev/null || openclaw channels list 2>&1');
 
@@ -19,6 +22,12 @@ export async function GET() {
       status = JSON.parse(statusResult.stdout);
     } catch {
       status = { raw: statusResult.stdout, connected: statusResult.code === 0 };
+    }
+    
+    // Force version from openclaw --version command
+    const versionOutput = versionResult.stdout.trim();
+    if (versionOutput && versionOutput !== 'N/A') {
+      status.version = versionOutput;
     }
 
     let channels: any[] = [];

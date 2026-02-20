@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import { Providers } from './providers';
 import { Sidebar } from '@/components/sidebar';
+import { Topbar } from '@/components/topbar';
 import './globals.css';
+import { Toaster } from '@/components/ui/sonner';
 
 export const metadata: Metadata = {
   title: 'OpenClaw Admin',
@@ -14,15 +16,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es">
-      <body className="bg-gray-950 text-gray-100">
+    <html lang="es" className="dark">
+      <body className="bg-background text-foreground antialiased min-h-screen">
         <Providers>
-          <div className="flex h-screen">
+          <div className="flex h-screen overflow-hidden">
             <Sidebar />
-            <main className="flex-1 overflow-auto">
-              {children}
-            </main>
+            <div className="flex-1 flex flex-col min-w-0">
+              <Topbar />
+              <main className="flex-1 overflow-auto bg-muted/20">
+                {children}
+              </main>
+            </div>
           </div>
+          <Toaster />
         </Providers>
       </body>
     </html>

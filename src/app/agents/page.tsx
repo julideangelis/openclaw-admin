@@ -3,6 +3,17 @@
 import React, { useState, useEffect } from 'react';
 import { useAdmin } from '@/components/ssh-provider';
 import { OPENCLAW_TOOLS } from '@/lib/types';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Bot, Plus, Trash2, Edit2, Terminal } from 'lucide-react';
+import { toast } from 'sonner';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface AgentForm {
   id: string;
@@ -28,7 +39,6 @@ export default function AgentsPage() {
   const [agents, setAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<AgentForm | null>(null);
-  const [error, setError] = useState('');
 
   const load = async () => {
     try {
@@ -36,7 +46,7 @@ export default function AgentsPage() {
       const data = await api.listAgents();
       setAgents(data.agents || []);
     } catch (e: any) {
-      setError(e.message);
+      toast.error('Error al cargar agentes', { description: e.message });
     } finally {
       setLoading(false);
     }
@@ -46,12 +56,17 @@ export default function AgentsPage() {
 
   const save = async () => {
     if (!editing) return;
+    if (!editing.id) {
+      toast.error('El ID del agente es obligatorio');
+      return;
+    }
     try {
       await api.updateAgent(editing);
       setEditing(null);
+      toast.success('Agente guardado exitosamente');
       load();
     } catch (e: any) {
-      setError(e.message);
+      toast.error('Error al guardar agente', { description: e.message });
     }
   };
 
@@ -59,9 +74,10 @@ export default function AgentsPage() {
     if (!confirm(`¿Eliminar agente "${id}"?`)) return;
     try {
       await api.deleteAgent(id);
+      toast.success('Agente eliminado');
       load();
     } catch (e: any) {
-      setError(e.message);
+      toast.error('Error al eliminar agente', { description: e.message });
     }
   };
 
@@ -72,123 +88,181 @@ export default function AgentsPage() {
     setEditing({ ...editing, tools: { ...editing.tools, [list]: updated } });
   };
 
-  if (!connected) return <div className="p-6 text-gray-400">Esperando conexión SSH...</div>;
+  if (!connected) return (
+    <div className="p-8">
+      <Skeleton className="h-8 w-[200px] mb-8" />
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {[1, 2, 3].map(i => <Skeleton key={i} className="h-48 w-full rounded-xl" />)}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-8 max-w-7xl mx-auto space-y-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">🤖 Agentes</h1>
-        <button onClick={() => setEditing({ ...emptyForm })} className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm">
-          + Nuevo Agente
-        </button>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Agentes</h1>
+        <Button onClick={() => setEditing({ ...emptyForm })} className="gap-2">
+          <Plus className="h-4 w-4" />
+          <span className="hidden sm:inline">Nuevo Agente</span>
+        </Button>
       </div>
 
-      {error && <div className="p-3 bg-red-900/50 border border-red-700 rounded text-red-300 text-sm">{error}</div>}
-
       {loading ? (
-        <div className="text-gray-400">Cargando...</div>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map(i => <Skeleton key={i} className="h-48 w-full rounded-xl" />)}
+        </div>
+      ) : agents.length === 0 ? (
+        <Card className="flex flex-col items-center justify-center py-16 text-center border-dashed">
+          <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4">
+            <Bot className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <h2 className="text-xl font-semibold">No hay agentes</h2>
+          <p className="text-muted-foreground mt-2 max-w-sm mb-6">
+            Aún no has configurado ningún agente. Comienza creando tu primer agente de IA.
+          </p>
+          <Button onClick={() => setEditing({ ...emptyForm })} variant="outline">
+            <Plus className="h-4 w-4 mr-2" />
+            Crear Agente
+          </Button>
+        </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {agents.map((agent: any) => (
-            <div key={agent.id} className="bg-gray-800 border border-gray-700 rounded-lg p-4">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <h3 className="text-white font-medium">{agent.name || agent.id}</h3>
-                  <p className="text-gray-400 text-xs">{agent.id}</p>
+            <Card key={agent.id} className="flex flex-col">
+              <CardHeader className="pb-4">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-1">
+                    <CardTitle className="text-xl">{agent.name || agent.id}</CardTitle>
+                    <p className="text-sm font-mono text-muted-foreground">{agent.id}</p>
+                  </div>
+                  <Badge variant={agent.enabled !== false ? "default" : "secondary"} className={agent.enabled !== false ? "bg-green-600 hover:bg-green-700" : ""}>
+                    {agent.enabled !== false ? 'Activo' : 'Inactivo'}
+                  </Badge>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded ${agent.enabled !== false ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
-                  {agent.enabled !== false ? 'Activo' : 'Inactivo'}
-                </span>
-              </div>
-              <p className="text-gray-400 text-sm mb-3">Modelo: {agent.model || 'default'}</p>
-              <div className="flex gap-2">
-                <button onClick={() => setEditing({ ...emptyForm, ...agent, tools: { allow: [], deny: [], ...agent.tools }, subagents: { allowAgents: [], maxConcurrent: 4, ...agent.subagents }, sandbox: { mode: 'off', scope: 'session', ...agent.sandbox } })} className="text-xs text-blue-400 hover:text-blue-300">
+              </CardHeader>
+              <CardContent className="flex-1 space-y-4">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Terminal className="h-4 w-4" />
+                  <span className="truncate">{agent.model || 'default'}</span>
+                </div>
+              </CardContent>
+              <CardFooter className="pt-4 border-t border-border flex justify-between">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => setEditing({ ...emptyForm, ...agent, tools: { allow: [], deny: [], ...agent.tools }, subagents: { allowAgents: [], maxConcurrent: 4, ...agent.subagents }, sandbox: { mode: 'off', scope: 'session', ...agent.sandbox } })}
+                >
+                  <Edit2 className="h-4 w-4" />
                   Editar
-                </button>
-                <button onClick={() => remove(agent.id)} className="text-xs text-red-400 hover:text-red-300">
+                </Button>
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => remove(agent.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
                   Eliminar
-                </button>
-              </div>
-            </div>
+                </Button>
+              </CardFooter>
+            </Card>
           ))}
-          {agents.length === 0 && <p className="text-gray-500 col-span-full">No hay agentes configurados</p>}
         </div>
       )}
 
       {/* Edit Modal */}
-      {editing && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 overflow-y-auto py-8">
-          <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4">
-            <h2 className="text-lg font-semibold text-white mb-4">{editing.id ? 'Editar Agente' : 'Nuevo Agente'}</h2>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm text-gray-400">ID</label>
-                  <input value={editing.id} onChange={e => setEditing({ ...editing, id: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm" />
+      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+          <DialogHeader className="px-6 py-4 border-b">
+            <DialogTitle>{editing?.id ? 'Editar Agente' : 'Nuevo Agente'}</DialogTitle>
+          </DialogHeader>
+          
+          <ScrollArea className="flex-1 px-6 py-4">
+            {editing && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="id">ID</Label>
+                    <Input id="id" value={editing.id} onChange={e => setEditing({ ...editing, id: e.target.value })} disabled={!!agents.find(a => a.id === editing.id)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Nombre</Label>
+                    <Input id="name" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="model">Modelo</Label>
+                    <Input id="model" value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="workspace">Workspace</Label>
+                    <Input id="workspace" value={editing.workspace} onChange={e => setEditing({ ...editing, workspace: e.target.value })} placeholder="Ej: /var/www" />
+                  </div>
                 </div>
-                <div>
-                  <label className="text-sm text-gray-400">Nombre</label>
-                  <input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm" />
+
+                <div className="space-y-3">
+                  <Label>Tools Allow (Permitidas)</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {OPENCLAW_TOOLS.map(tool => (
+                      <Badge 
+                        key={tool} 
+                        variant={editing.tools.allow.includes(tool) ? "default" : "outline"}
+                        className={editing.tools.allow.includes(tool) ? "bg-green-600 hover:bg-green-700 cursor-pointer" : "cursor-pointer hover:bg-accent"}
+                        onClick={() => toggleTool('allow', tool)}
+                        aria-label={`Permitir herramienta ${tool}`}
+                      >
+                        {tool}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-                <div>
-                  <label className="text-sm text-gray-400">Modelo</label>
-                  <input value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm" />
+
+                <div className="space-y-3">
+                  <Label>Tools Deny (Denegadas)</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {OPENCLAW_TOOLS.map(tool => (
+                      <Badge 
+                        key={tool} 
+                        variant={editing.tools.deny.includes(tool) ? "destructive" : "outline"}
+                        className={editing.tools.deny.includes(tool) ? "cursor-pointer" : "cursor-pointer hover:bg-accent"}
+                        onClick={() => toggleTool('deny', tool)}
+                        aria-label={`Denegar herramienta ${tool}`}
+                      >
+                        {tool}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-                <div>
-                  <label className="text-sm text-gray-400">Workspace</label>
-                  <input value={editing.workspace} onChange={e => setEditing({ ...editing, workspace: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm" />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="sandboxMode">Sandbox Mode</Label>
+                    <Select value={editing.sandbox.mode} onValueChange={(val) => setEditing({ ...editing, sandbox: { ...editing.sandbox, mode: val } })}>
+                      <SelectTrigger id="sandboxMode">
+                        <SelectValue placeholder="Seleccionar modo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="off">Off</SelectItem>
+                        <SelectItem value="non-main">Non-Main</SelectItem>
+                        <SelectItem value="all">All</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="maxConcurrent">Max Concurrent Subagents</Label>
+                    <Input id="maxConcurrent" type="number" min={1} max={20} value={editing.subagents.maxConcurrent} onChange={e => setEditing({ ...editing, subagents: { ...editing.subagents, maxConcurrent: parseInt(e.target.value) || 4 } })} />
+                  </div>
                 </div>
               </div>
+            )}
+          </ScrollArea>
 
-              <div>
-                <label className="text-sm text-gray-400">Tools Allow</label>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {OPENCLAW_TOOLS.map(tool => (
-                    <button key={tool} onClick={() => toggleTool('allow', tool)}
-                      className={`text-xs px-2 py-1 rounded ${editing.tools.allow.includes(tool) ? 'bg-green-800 text-green-200' : 'bg-gray-700 text-gray-400'}`}>
-                      {tool}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm text-gray-400">Tools Deny</label>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {OPENCLAW_TOOLS.map(tool => (
-                    <button key={tool} onClick={() => toggleTool('deny', tool)}
-                      className={`text-xs px-2 py-1 rounded ${editing.tools.deny.includes(tool) ? 'bg-red-800 text-red-200' : 'bg-gray-700 text-gray-400'}`}>
-                      {tool}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm text-gray-400">Sandbox Mode</label>
-                  <select value={editing.sandbox.mode} onChange={e => setEditing({ ...editing, sandbox: { ...editing.sandbox, mode: e.target.value } })}
-                    className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm">
-                    <option value="off">Off</option>
-                    <option value="non-main">Non-Main</option>
-                    <option value="all">All</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm text-gray-400">Max Concurrent Subagents</label>
-                  <input type="number" value={editing.subagents.maxConcurrent} onChange={e => setEditing({ ...editing, subagents: { ...editing.subagents, maxConcurrent: parseInt(e.target.value) || 4 } })}
-                    className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm" />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setEditing(null)} className="px-4 py-2 text-gray-400 hover:text-white text-sm">Cancelar</button>
-              <button onClick={save} className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm">Guardar</button>
-            </div>
-          </div>
-        </div>
-      )}
+          <DialogFooter className="px-6 py-4 border-t bg-muted/40">
+            <Button variant="outline" onClick={() => setEditing(null)}>Cancelar</Button>
+            <Button onClick={save}>Guardar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
