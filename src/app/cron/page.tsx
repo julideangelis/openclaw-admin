@@ -20,6 +20,8 @@ export default function CronPage() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any>(null);
+  const [running, setRunning] = useState<Record<string, boolean>>({});
+  const [saving, setSaving] = useState(false);
 
   const load = async () => {
     try {
@@ -37,11 +39,15 @@ export default function CronPage() {
   useEffect(() => { if (connected) load(); }, [connected]);
 
   const run = async (jobId: string) => {
+    if (running[jobId]) return;
     try {
+      setRunning(prev => ({ ...prev, [jobId]: true }));
       await api.runCronJob(jobId);
       toast.success('Cron job ejecutado manualmente');
     } catch (e: any) {
       toast.error('Error al ejecutar cron job', { description: e.message });
+    } finally {
+      setRunning(prev => ({ ...prev, [jobId]: false }));
     }
   };
 
@@ -69,6 +75,7 @@ export default function CronPage() {
   const save = async () => {
     if (!editing) return;
     try {
+      setSaving(true);
       if (editing._isNew) {
         const { _isNew, ...job } = editing;
         await api.createCronJob(job);
@@ -81,6 +88,8 @@ export default function CronPage() {
       load();
     } catch (e: any) {
       toast.error('Error al guardar cron job', { description: e.message });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -182,9 +191,13 @@ export default function CronPage() {
               </div>
               
               <div className="flex items-center gap-2 border-t pt-3 md:border-0 md:pt-0">
-                <Button variant="outline" size="sm" onClick={() => run(job.id)} className="gap-1.5">
-                  <Play className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Ejecutar</span>
+                <Button variant="outline" size="sm" onClick={() => run(job.id)} disabled={running[job.id]} className="gap-1.5 min-w-[90px]">
+                  {running[job.id] ? (
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5" />
+                  )}
+                  <span className="hidden sm:inline">{running[job.id] ? 'Iniciando...' : 'Ejecutar'}</span>
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => toggle(job.id)}>
                   {job.enabled ? 'Desactivar' : 'Activar'}
@@ -272,8 +285,15 @@ export default function CronPage() {
           </ScrollArea>
 
           <DialogFooter className="px-6 py-4 border-t bg-muted/40">
-            <Button variant="outline" onClick={() => setEditing(null)}>Cancelar</Button>
-            <Button onClick={save}>Guardar</Button>
+            <Button variant="outline" onClick={() => setEditing(null)} disabled={saving}>Cancelar</Button>
+            <Button onClick={save} disabled={saving} className="min-w-[100px]">
+              {saving ? (
+                <>
+                  <span className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Guardando...
+                </>
+              ) : 'Guardar'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
